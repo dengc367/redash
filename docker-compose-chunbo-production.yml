@@ -1,0 +1,65 @@
+version: '3.8'
+x-redash-service: &redash-service
+  build:
+    context: .
+    dockerfile: Dockerfile-chunbo-production
+    args:
+      #skip_frontend_build: "true"
+      skip_dev_deps: "true"
+  volumes:
+    - .:/app
+  #image: redash/redash:8.0.0.b32245
+  #image: redash_source_server:latest
+  depends_on:
+    - postgres
+    - redis
+  env_file: /opt/redash/env
+  restart: always
+services:
+  server:
+    <<: *redash-service
+    command: server
+    ports:
+      - "5000:5000"
+    environment:
+      REDASH_WEB_WORKERS: 4
+  scheduler:
+    <<: *redash-service
+    command: scheduler
+    environment:
+      QUEUES: "celery"
+      WORKERS_COUNT: 1
+  scheduled_worker:
+    <<: *redash-service
+    command: worker
+    environment:
+      QUEUES: "scheduled_queries,schemas"
+      WORKERS_COUNT: 1
+  adhoc_worker:
+    <<: *redash-service
+    command: worker
+    environment:
+      QUEUES: "queries"
+      WORKERS_COUNT: 2
+  redis:
+    image: redis:5.0-alpine
+    ports:
+      - "6379:6379"
+    restart: always
+  postgres:
+    image: postgres:9.6-alpine
+    ports:
+      - "5433:5432"
+    env_file: /opt/redash/env
+    volumes:
+      - /opt/redash/postgres-data:/var/lib/postgresql/data
+    restart: always
+  nginx:
+    image: redash/nginx:latest
+    ports:
+      - "8081:80"
+    depends_on:
+      - server
+    links:
+      - server:redash
+    restart: always
